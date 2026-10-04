@@ -23,6 +23,10 @@ function App() {
   useEffect(() => () => audio.current?.dispose(), [])
 
   useEffect(() => {
+    setResults([])
+  }, [roundCount, selected, allowDuplicates])
+
+  useEffect(() => {
     if (pool.length && !selected.has(winner.name)) setWinner(pool[0])
   }, [selected, winner.name, pool])
 
@@ -62,60 +66,74 @@ function App() {
   }
 
   return <main>
-    <section className="hero-copy">
+    <header className="hero-copy">
       <p className="eyebrow">Bullet Echo randomizer</p>
-      <h1>WHO DROPS<br /><span>IN NEXT?</span></h1>
-      <p className="intro">Build your squad pool, set the number of rounds, then let the machine call the hero.</p>
+      <h1>WHO DROPS <span>IN NEXT?</span></h1>
+      <p className="intro">Choose your heroes and number of rounds, then hit spin. One hero lands in each round slot as the machine makes its picks.</p>
       <div className="source">ROSTER: BULLET ECHO WIKI</div>
+    </header>
+
+    <section className="setup-section" aria-label="Settings and hero list">
+      <aside className="control-panel">
+        <div className="panel-heading"><h2>SETTINGS</h2><small>CONFIGURE YOUR RUN</small></div>
+        <div className="round-control">
+          <label htmlFor="rounds">ROUNDS</label>
+          <button aria-label="Decrease rounds" onClick={() => setRounds(Math.max(1, roundCount - 1))} disabled={spinning || roundCount === 1}>−</button>
+          <input id="rounds" type="number" min="1" max={maxRounds} step="1" value={roundCount} onChange={(event) => setRounds(Math.min(maxRounds ?? Number.MAX_SAFE_INTEGER, Math.max(1, Math.floor(Number(event.target.value)) || 1)))} disabled={spinning} />
+          <button aria-label="Increase rounds" onClick={() => setRounds(roundCount + 1)} disabled={spinning || roundCount >= (maxRounds ?? Number.MAX_SAFE_INTEGER)}>+</button>
+        </div>
+        <div className="run-options">
+          <label><span>ALLOW DUPLICATES</span><input type="checkbox" role="switch" checked={allowDuplicates} onChange={(event) => setAllowDuplicates(event.target.checked)} disabled={spinning} /></label>
+          <p>{allowDuplicates ? 'Heroes can win again in later rounds.' : 'Each hero can win once per run.'}</p>
+          <label><span>SOUND EFFECTS</span><input type="checkbox" role="switch" checked={soundEnabled} onChange={(event) => {
+            setSoundEnabled(event.target.checked)
+            audio.current?.setEnabled(event.target.checked)
+            if (event.target.checked) void audio.current?.unlock()
+          }} /></label>
+        </div>
+        <p className="settings-summary">{pool.length ? `${pool.length} ${pool.length === 1 ? 'hero' : 'heroes'} in the pool. ${roundCount} round ${roundCount === 1 ? 'slot' : 'slots'} ready.` : 'Select at least one hero to start spinning.'}</p>
+      </aside>
+
+      <div className="roster-panel">
+        <div className="panel-heading"><h2>HERO POOL</h2><small>{pool.length} / {heroes.length} SELECTED</small></div>
+        <div className="quick-actions"><button onClick={() => setSelected(new Set(heroes.map(({ name }) => name)))} disabled={spinning}>ALL</button><button onClick={() => setSelected(new Set())} disabled={spinning}>NONE</button></div>
+        <div className="hero-grid">{heroes.map((hero) => <button key={hero.name} className={selected.has(hero.name) ? 'chosen' : ''} aria-pressed={selected.has(hero.name)} onClick={() => toggleHero(hero.name)} disabled={spinning}>
+          <img src={hero.image} alt="" /><span>{hero.name}</span><i>✓</i>
+        </button>)}</div>
+      </div>
     </section>
 
-    <section className="machine-section">
-      <div className={`machine ${reelHeroes.length ? 'is-spinning' : ''}`}>
-        <div className="machine-top"><span>HERO SELECTOR</span><i></i><span>ONLINE</span></div>
-        <div className="reel-window">
-          <div className="marker marker-left"></div><div className="marker marker-right"></div>
-          <div className="reel" key={spinId} style={{ '--spin-distance': `calc(var(--reel-height) * -${Math.max(0, reelHeroes.length - 1)})` }}>
-            {(reelHeroes.length ? reelHeroes : [winner]).map((hero, index) => <div className="reel-card" key={`${hero.name}-${index}`}>
-              <img src={hero.image} alt={hero.name} /><strong>{hero.name}</strong>
-            </div>)}
+    <section className="play-section" aria-label="Spinner and results">
+      <div className="machine-section">
+        <div className={`machine ${reelHeroes.length ? 'is-spinning' : ''}`}>
+          <div className="machine-top"><span>HERO SELECTOR</span><i></i><span>ONLINE</span></div>
+          <div className="reel-window">
+            <div className="marker marker-left"></div><div className="marker marker-right"></div>
+            <div className="reel" key={spinId} style={{ '--spin-distance': `calc(var(--reel-height) * -${Math.max(0, reelHeroes.length - 1)})` }}>
+              {(reelHeroes.length ? reelHeroes : [winner]).map((hero, index) => <div className="reel-card" key={`${hero.name}-${index}`}>
+                <img src={hero.image} alt={hero.name} /><strong>{hero.name}</strong>
+              </div>)}
+            </div>
           </div>
+          <div className="machine-bottom"><span>{spinning ? `ROUND ${Math.min(results.length + 1, roundCount)} / ${roundCount}` : 'LOCKED ON TARGET'}</span><span className="signal">●</span></div>
         </div>
-        <div className="machine-bottom"><span>{spinning ? `ROUND ${Math.min(results.length + 1, roundCount)} / ${roundCount}` : 'LOCKED ON TARGET'}</span><span className="signal">●</span></div>
+        <button className="spin-button" onClick={spin} disabled={!pool.length || spinning}>
+          {spinning ? 'SPINNING...' : `SPIN ${roundCount} ROUND${roundCount === 1 ? '' : 'S'}`}
+        </button>
       </div>
-      <button className="spin-button" onClick={spin} disabled={!pool.length || spinning}>
-        {spinning ? 'SPINNING...' : `SPIN ${roundCount} ROUND${roundCount === 1 ? '' : 'S'}`}
-      </button>
+
       <section className="results" aria-label="Round results" aria-live="polite">
-        <h2>ROUND RESULTS</h2>
-        {results.length ? <div className="result-grid">{results.map((hero, index) => <article className="result-card" key={`${hero.name}-${index}`}>
-          <img src={hero.image} alt={hero.name} />
-          <div><b>ROUND {String(index + 1).padStart(2, '0')}</b><strong>{hero.name}</strong></div>
-        </article>)}</div> : <p>RESULTS WILL APPEAR HERE</p>}
+        <div className="panel-heading"><h2>ROUND RESULTS</h2><small>{results.length} / {roundCount} FILLED</small></div>
+        <div className="result-grid">{Array.from({ length: roundCount }, (_, index) => {
+          const hero = results[index]
+          const isCurrent = spinning && index === results.length
+          return <article className={`result-card ${hero ? 'filled' : 'vacant'} ${isCurrent ? 'is-current' : ''}`} key={index} aria-label={`Round ${index + 1}: ${hero?.name ?? (isCurrent ? 'spinning' : 'awaiting hero')}`}>
+            {hero ? <img src={hero.image} alt={hero.name} /> : <div className="slot-placeholder" aria-hidden="true"><span>?</span></div>}
+            <div className="result-caption"><b>ROUND {String(index + 1).padStart(2, '0')}</b><strong>{hero?.name ?? (isCurrent ? 'Spinning...' : 'Awaiting hero')}</strong></div>
+          </article>
+        })}</div>
       </section>
     </section>
-
-    <aside className="control-panel">
-      <div className="panel-heading"><span>LOADOUT</span><small>{pool.length} / {heroes.length} SELECTED</small></div>
-      <div className="round-control">
-        <label htmlFor="rounds">ROUNDS</label>
-        <button onClick={() => setRounds(Math.max(1, roundCount - 1))} disabled={spinning || roundCount === 1}>−</button>
-        <input id="rounds" type="number" min="1" max={maxRounds} step="1" value={roundCount} onChange={(event) => setRounds(Math.min(maxRounds ?? Number.MAX_SAFE_INTEGER, Math.max(1, Math.floor(Number(event.target.value)) || 1)))} disabled={spinning} />
-        <button onClick={() => setRounds(roundCount + 1)} disabled={spinning || roundCount >= (maxRounds ?? Number.MAX_SAFE_INTEGER)}>+</button>
-      </div>
-      <div className="run-options">
-        <label><span>ALLOW DUPLICATES</span><input type="checkbox" role="switch" checked={allowDuplicates} onChange={(event) => setAllowDuplicates(event.target.checked)} disabled={spinning} /></label>
-        <p>{allowDuplicates ? 'Heroes can win again in later rounds.' : 'Each hero can win once per run.'}</p>
-        <label><span>SOUND EFFECTS</span><input type="checkbox" role="switch" checked={soundEnabled} onChange={(event) => {
-          setSoundEnabled(event.target.checked)
-          audio.current?.setEnabled(event.target.checked)
-          if (event.target.checked) void audio.current?.unlock()
-        }} /></label>
-      </div>
-      <div className="quick-actions"><button onClick={() => setSelected(new Set(heroes.map(({ name }) => name)))} disabled={spinning}>ALL</button><button onClick={() => setSelected(new Set())} disabled={spinning}>NONE</button></div>
-      <div className="hero-grid">{heroes.map((hero) => <button key={hero.name} className={selected.has(hero.name) ? 'chosen' : ''} onClick={() => toggleHero(hero.name)} disabled={spinning}>
-        <img src={hero.image} alt="" /><span>{hero.name}</span><i>✓</i>
-      </button>)}</div>
-    </aside>
   </main>
 }
 
